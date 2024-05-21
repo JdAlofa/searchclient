@@ -50,8 +50,8 @@ public class State {
     public static Color[] boxColors;
 
     public final State parent;
-    public final Action[] jointAction;
-    private final int g;
+    public Action[] jointAction;
+    public final int g;
 
     private int hash = 0;
 
@@ -70,6 +70,12 @@ public class State {
         this.parent = null;
         this.jointAction = null;
         this.g = 0;
+        // **Change:** Initialize jointAction
+        this.jointAction = new Action[agentRows.length]; // Initialize with the number of agents
+        // for (int i = 0; i < agentRows.length; i++) {
+        //     this.jointAction[i] = Action.NoOp;
+        // }
+
     }
 
     // Constructs the state resulting from applying jointAction in parent.
@@ -147,6 +153,51 @@ public class State {
         return true;
     }
 
+    // Function to resolve conflicts with previously generated plans
+    private void resolveConflicts(Action[][] previousPlans) {
+        // Assuming the agent plans are for agents 0, 1, 2, ...
+        int numAgents = this.agentRows.length;
+        for (int agent = 1; agent < numAgents; ++agent) {
+            for (int i = 0; i < previousPlans[agent - 1].length; ++i) {
+                if (previousPlans[agent - 1][i] == Action.NoOp) {
+                    continue;
+                }
+
+                // Check for conflicts with the plan for agent (agent-1)
+                for (int j = 0; j < this.jointAction.length; ++j) {
+                    if (this.jointAction[j] == Action.NoOp) {
+                        continue;
+                    }
+
+                    if (conflicts(this.jointAction[j], previousPlans[agent - 1][i])) {
+                        // Concede to the previous agent's plan
+                        this.jointAction[j] = Action.NoOp;
+                        break; // Move to the next action in the previous plan
+                    }
+                }
+            }
+        }
+    }
+
+    // Helper function to check if two actions conflict
+    private boolean conflicts(Action action1, Action action2) {
+        // Two actions conflict if they both attempt to occupy the same cell
+        // or if they both attempt to move the same box.
+        int agent1Row = this.agentRows[0] + action1.agentRowDelta;
+        int agent1Col = this.agentCols[0] + action1.agentColDelta;
+
+        int agent2Row = this.agentRows[0] + action2.agentRowDelta;
+        int agent2Col = this.agentCols[0] + action2.agentColDelta;
+
+        // Check if actions involve moving the same box
+        if (action1.boxRowDelta != 0 && action2.boxRowDelta != 0 &&
+                (action1.boxRowDelta == action2.boxRowDelta && action1.boxColDelta == action2.boxColDelta)) {
+            return true;
+        }
+
+        return agent1Row == agent2Row && agent1Col == agent2Col;
+    }
+
     public ArrayList<State> getExpandedStates() {
         int numAgents = this.agentRows.length;
 
@@ -197,6 +248,62 @@ public class State {
 
         Collections.shuffle(expandedStates, State.RNG);
         return expandedStates;
+    }
+
+    // Function to resolve conflicts with previously generated plans
+    public ArrayList<State> getExpandedStatesSequential(Action[][] previousPlans) {
+        int numAgents = this.agentRows.length;
+        ArrayList<State> expandedStates = new ArrayList<>(16);
+
+        for (int agent = 0; agent < numAgents; ++agent) {
+            // Create a new state where all other agents are static
+            State agentState = this.createStaticStateForAgent(agent);
+            // Generate actions for the current agent
+            Action[] agentActions = agentState.generateAgentActions();
+            // Generate child states for the current agent
+            for (Action action : agentActions) {
+                Action[] jointAction = new Action[numAgents];
+                Arrays.fill(jointAction, Action.NoOp); // Initialize all actions to NoOp
+                jointAction[agent] = action;
+                // **Change:** Create a new State object and resolve conflicts
+                State childState = new State(agentState, jointAction);
+                childState.resolveConflicts(previousPlans); // Resolve conflicts with previous plans
+                expandedStates.add(childState);
+            }
+        }
+
+        return expandedStates;
+    }
+
+    private Action[] generateAgentActions() {
+        ArrayList<Action> agentActions = new ArrayList<>(Action.values().length);
+        for (Action action : Action.values()) {
+            if (this.isApplicable(0, action)) {
+                agentActions.add(action);
+            }
+        }
+        return agentActions.toArray(new Action[0]);
+    }
+
+    private State createStaticStateForAgent(int agentIndex) {
+        int[] agentRowsCopy = Arrays.copyOf(this.agentRows, this.agentRows.length);
+        int[] agentColsCopy = Arrays.copyOf(this.agentCols, this.agentCols.length);
+        char[][] boxesCopy = new char[this.boxes.length][];
+        for (int i = 0; i < this.boxes.length; i++) {
+            boxesCopy[i] = Arrays.copyOf(this.boxes[i], this.boxes[i].length);
+        }
+
+        State agentState = new State(agentRowsCopy, agentColsCopy, agentColors, walls,
+                boxesCopy, boxColors, goals);
+
+        // Set all other agents to NoOp
+        for (int i = 0; i < agentState.agentRows.length; i++) {
+            if (i != agentIndex) {
+                agentState.jointAction[i] = Action.NoOp;
+            }
+        }
+
+        return agentState;
     }
 
     private boolean isApplicable(int agent, Action action) {
@@ -348,6 +455,21 @@ public class State {
         }
         return plan;
     }
+
+    public Action[] extractPlanForCurrentAgent() {
+        Action[] plan = new Action[this.g];
+        State state = this;
+        int currentAgentIndex =  this.agentRows.length - 1;
+            // Iterate only if there is a valid plan (state.jointAction is not null)
+            while (state.jointAction != null) {
+                plan[state.g - 1] = state.jointAction[currentAgentIndex]; // Extract action for current agent
+                state = state.parent;
+            }
+        
+    
+        return plan;
+    }
+
 
     @Override
     public int hashCode() {
