@@ -3,7 +3,9 @@ package searchclient;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 import java.util.Random;
 
@@ -26,15 +28,15 @@ public class State {
      * Row 1: (1,0) (1,1) (1,2) (1,3) ...
      * Row 2: (2,0) (2,1) (2,2) (2,3) ...
      * ...
-     * 
+     *
      * For example, this.walls[2] is an array of booleans for the third row.
      * this.walls[row][col] is true if there's a wall at (row, col).
-     * 
+     *
      * this.boxes and this.char are two-dimensional arrays of chars.
      * this.boxes[1][2]='A' means there is an A box at (1,2).
      * If there is no box at (1,2), we have this.boxes[1][2]=0 (null character).
      * Simiarly for goals.
-     * 
+     *
      */
     public static boolean[][] walls;
     public char[][] boxes;
@@ -275,6 +277,22 @@ public class State {
                     boxRows[agent] = agentRow; // Distinct dummy value
                     boxCols[agent] = agentCol; // Distinct dummy value
                     break;
+                case Push:
+                    destinationRows[agent] = agentRow + action.agentRowDelta;
+                    destinationCols[agent] = agentCol + action.agentColDelta;
+                    boxRow = destinationRows[agent] + action.boxRowDelta;
+                    boxCol = destinationCols[agent] + action.boxColDelta;
+                    boxRows[agent] = boxRow;
+                    boxCols[agent] = boxCol;
+                    break;
+                case Pull:
+                    destinationRows[agent] = agentRow + action.agentRowDelta;
+                    destinationCols[agent] = agentCol + action.agentColDelta;
+                    boxRow = agentRow - action.boxRowDelta;
+                    boxCol = agentCol - action.boxColDelta;
+                    boxRows[agent] = boxRow;
+                    boxCols[agent] = boxCol;
+                    break;
             }
         }
 
@@ -290,6 +308,16 @@ public class State {
 
                 // Moving into same cell?
                 if (destinationRows[a1] == destinationRows[a2] && destinationCols[a1] == destinationCols[a2]) {
+                    return true;
+                }
+
+                // Moving the same box?
+                if (boxRows[a1] == boxRows[a2] && boxCols[a1] == boxCols[a2]) {
+                    return true;
+                }
+
+                // Agent moving into cell where box is being pushed?
+                if (destinationRows[a1] == boxRows[a2] && destinationCols[a1] == boxCols[a2]) {
                     return true;
                 }
             }
@@ -386,7 +414,7 @@ public class State {
         return s.toString();
     }
 
-        private int[][][][] distances;
+    private int[][][][] distances;
 
     public int[][][][] getDistances() {
         if (this.distances == null) {
@@ -412,7 +440,6 @@ public class State {
                 // Use BFS to compute the shortest distances from (startRow, startCol) to all
                 // other cells
 
-                
                 bfs(startRow, startCol);
             }
         }
@@ -427,7 +454,7 @@ public class State {
 
         Queue<int[]> queue = new LinkedList<>();
         queue.add(new int[] { startRow, startCol, 0 }); // The third element of the array is the distance from the start
-                                                        // cell
+        // cell
 
         while (!queue.isEmpty()) {
             int[] cell = queue.poll();

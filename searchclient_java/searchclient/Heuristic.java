@@ -12,22 +12,6 @@ public abstract class Heuristic
                 this.distances = initialState.getDistances();
         
             }
-    public int h(State s) {
-        int count = 0;
-        for (int row = 1; row < s.goals.length - 1; row++) {
-            for (int col = 1; col < s.goals[row].length - 1; col++) {
-                char goal = s.goals[row][col];
-
-                if ('A' <= goal && goal <= 'Z' && s.boxes[row][col] != goal) {
-                    count++;
-                } else if ('0' <= goal && goal <= '9' &&
-                        !(s.agentRows[goal - '0'] == row && s.agentCols[goal - '0'] == col)) {
-                    count++;
-                }
-            }
-        }
-        return count;
-    }
 
     public int H(State s) { /* improved heuristic */
         int totalDistance = 0;

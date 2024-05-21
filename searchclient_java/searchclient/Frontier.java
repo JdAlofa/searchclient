@@ -101,8 +101,8 @@ class FrontierBestFirst
     private HashSet<State> set = new HashSet<>();
     private Heuristic heuristic;
 
-    public FrontierBestFirst(Heuristic h) {
-        this.heuristic = h;
+    public FrontierBestFirst(Heuristic H) {
+        this.heuristic = H;
         this.queue = new PriorityQueue<>(this.heuristic);
     }
 
