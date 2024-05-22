@@ -1,5 +1,7 @@
 package searchclient;
 
+// import searchclient.Action;
+// import searchclient.ActionType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -11,7 +13,6 @@ import java.util.Random;
 
 public class State {
     private static final Random RNG = new Random(1);
-
     /*
      * The agent rows, columns, and colors are indexed by the agent number.
      * For example, this.agentRows[0] is the row location of agent '0'.
@@ -19,7 +20,6 @@ public class State {
     public int[] agentRows;
     public int[] agentCols;
     public static Color[] agentColors;
-
     /*
      * The walls, boxes, and goals arrays are indexed from the top-left of the
      * level, row-major order (row, col).
@@ -41,19 +41,17 @@ public class State {
     public static boolean[][] walls;
     public char[][] boxes;
     public static char[][] goals;
-
+    public static Color[] boxColors;
     /*
      * The box colors are indexed alphabetically. So this.boxColors[0] is the color
      * of A boxes,
      * this.boxColor[1] is the color of B boxes, etc.
      */
-    public static Color[] boxColors;
-
     public final State parent;
     public Action[] jointAction;
     public final int g;
-
     private int hash = 0;
+    private int currentAgentIndex;
 
     // Constructs an initial state.
     // Arguments are not copied, and therefore should not be modified after being
@@ -68,20 +66,21 @@ public class State {
         this.boxColors = boxColors;
         this.goals = goals;
         this.parent = null;
-        this.jointAction = null;
+        this.jointAction = new Action[agentRows.length];
         this.g = 0;
         // **Change:** Initialize jointAction
         this.jointAction = new Action[agentRows.length]; // Initialize with the number of agents
-        // for (int i = 0; i < agentRows.length; i++) {
-        //     this.jointAction[i] = Action.NoOp;
-        // }
-
+        System.err.println("State Constructor: jointAction.length = " + this.jointAction.length);
+        for (int i = 0; i < agentRows.length; i++) {
+            this.jointAction[i] = Action.NoOp; // Set each element to NoOp
+        }
+        System.err.println("State Constructor: jointAction = " + Arrays.toString(this.jointAction));
     }
 
     // Constructs the state resulting from applying jointAction in parent.
     // Precondition: Joint action must be applicable and non-conflicting in parent
     // state.
-    private State(State parent, Action[] jointAction) {
+    private State(State parent, Action[] jointAction, int currentAgentIndex) {
         // Copy parent
         this.agentRows = Arrays.copyOf(parent.agentRows, parent.agentRows.length);
         this.agentCols = Arrays.copyOf(parent.agentCols, parent.agentCols.length);
@@ -89,27 +88,23 @@ public class State {
         for (int i = 0; i < parent.boxes.length; i++) {
             this.boxes[i] = Arrays.copyOf(parent.boxes[i], parent.boxes[i].length);
         }
-
         // Set own parameters
         this.parent = parent;
         this.jointAction = Arrays.copyOf(jointAction, jointAction.length);
         this.g = parent.g + 1;
-
+        this.currentAgentIndex = currentAgentIndex;
         // Apply each action
         int numAgents = this.agentRows.length;
         for (int agent = 0; agent < numAgents; ++agent) {
             Action action = jointAction[agent];
             char box;
-
             switch (action.type) {
                 case NoOp:
                     break;
-
                 case Move:
                     this.agentRows[agent] += action.agentRowDelta;
                     this.agentCols[agent] += action.agentColDelta;
                     break;
-
                 case Push:
                     this.agentRows[agent] += action.agentRowDelta;
                     this.agentCols[agent] += action.agentColDelta;
@@ -118,7 +113,6 @@ public class State {
                             + action.boxColDelta] = box;
                     this.boxes[this.agentRows[agent]][this.agentCols[agent]] = 0;
                     break;
-
                 case Pull:
                     box = this.boxes[this.agentRows[agent] -
                             action.boxRowDelta][this.agentCols[agent]
@@ -153,6 +147,27 @@ public class State {
         return true;
     }
 
+    public boolean isGoalStateForAgent(int agentIndex) {
+        // Check if the agent has reached its goal position
+        if (!(this.agentRows[agentIndex] == this.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]] - '0' &&
+                this.agentCols[agentIndex] == this.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]]
+                        - '0')) {
+            return false;
+        }
+        // Check if the agent has moved all its boxes to their goal locations
+        for (int row = 1; row < this.goals.length - 1; row++) {
+            for (int col = 1; col < this.goals[row].length - 1; col++) {
+                char goal = this.goals[row][col];
+
+                if ('A' <= goal && goal <= 'Z' && this.boxes[row][col] != goal
+                        && this.boxColors[goal - 'A'] == this.agentColors[agentIndex]) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     // Function to resolve conflicts with previously generated plans
     private void resolveConflicts(Action[][] previousPlans) {
         // Assuming the agent plans are for agents 0, 1, 2, ...
@@ -169,7 +184,7 @@ public class State {
                         continue;
                     }
 
-                    if (conflicts(this.jointAction[j], previousPlans[agent - 1][i])) {
+                    if (conflicts(this.jointAction[j], previousPlans[agent - 1][i], j, agent - 1)) {
                         // Concede to the previous agent's plan
                         this.jointAction[j] = Action.NoOp;
                         break; // Move to the next action in the previous plan
@@ -178,80 +193,74 @@ public class State {
             }
         }
     }
-
-    // Helper function to check if two actions conflict
-    private boolean conflicts(Action action1, Action action2) {
-        // Two actions conflict if they both attempt to occupy the same cell
-        // or if they both attempt to move the same box.
-        int agent1Row = this.agentRows[0] + action1.agentRowDelta;
-        int agent1Col = this.agentCols[0] + action1.agentColDelta;
-
-        int agent2Row = this.agentRows[0] + action2.agentRowDelta;
-        int agent2Col = this.agentCols[0] + action2.agentColDelta;
-
-        // Check if actions involve moving the same box
-        if (action1.boxRowDelta != 0 && action2.boxRowDelta != 0 &&
-                (action1.boxRowDelta == action2.boxRowDelta && action1.boxColDelta == action2.boxColDelta)) {
-            return true;
-        }
-
-        return agent1Row == agent2Row && agent1Col == agent2Col;
-    }
-
-    public ArrayList<State> getExpandedStates() {
-        int numAgents = this.agentRows.length;
-
-        // Determine list of applicable actions for each individual agent.
-        Action[][] applicableActions = new Action[numAgents][];
-        for (int agent = 0; agent < numAgents; ++agent) {
-            ArrayList<Action> agentActions = new ArrayList<>(Action.values().length);
-            for (Action action : Action.values()) {
-                if (this.isApplicable(agent, action)) {
-                    agentActions.add(action);
-                }
-            }
-            applicableActions[agent] = agentActions.toArray(new Action[0]);
-        }
-
-        // Iterate over joint actions, check conflict and generate child states.
-        Action[] jointAction = new Action[numAgents];
-        int[] actionsPermutation = new int[numAgents];
-        ArrayList<State> expandedStates = new ArrayList<>(16);
-        while (true) {
-            for (int agent = 0; agent < numAgents; ++agent) {
-                jointAction[agent] = applicableActions[agent][actionsPermutation[agent]];
-            }
-
-            if (!this.isConflicting(jointAction)) {
-                expandedStates.add(new State(this, jointAction));
-            }
-
-            // Advance permutation
-            boolean done = false;
-            for (int agent = 0; agent < numAgents; ++agent) {
-                if (actionsPermutation[agent] < applicableActions[agent].length - 1) {
-                    ++actionsPermutation[agent];
-                    break;
-                } else {
-                    actionsPermutation[agent] = 0;
-                    if (agent == numAgents - 1) {
-                        done = true;
-                    }
-                }
-            }
-
-            // Last permutation?
-            if (done) {
+    int[] calculatePositions(Action action, int agentRow, int agentCol) {
+        int agentDestinationRow = -1, agentDestinationCol = -1, boxRow = -1, boxCol = -1;       
+         switch (action.type) {
+            case NoOp:
+                agentDestinationRow = agentRow;
+                agentDestinationCol = agentCol;
+                boxRow = -1; 
+                boxCol = -1; 
                 break;
-            }
-        }
-
-        Collections.shuffle(expandedStates, State.RNG);
-        return expandedStates;
+            case Move:
+                agentDestinationRow = agentRow + action.agentRowDelta;
+                agentDestinationCol = agentCol + action.agentColDelta;
+                boxRow = -1; 
+                boxCol = -1; 
+                break;
+            case Push:
+                agentDestinationRow = agentRow + action.agentRowDelta;
+                agentDestinationCol = agentCol + action.agentColDelta;
+                boxRow = agentDestinationRow + action.boxRowDelta;
+                boxCol = agentDestinationCol + action.boxColDelta;
+                break;
+            case Pull:
+                agentDestinationRow = agentRow + action.agentRowDelta;
+                agentDestinationCol = agentCol + action.agentColDelta;
+                boxRow = agentRow - action.boxRowDelta;
+                boxCol = agentCol - action.boxColDelta;
+                break;
+        }    
+        return new int[]{agentDestinationRow, agentDestinationCol, boxRow, boxCol};
     }
+    // Helper function to check if two actions conflict
+    private boolean conflicts(Action action1, Action action2, int agentIndex1, int agentIndex2) {
+        int agent1Row = this.agentRows[agentIndex1];
+        int agent1Col = this.agentCols[agentIndex1];
+        int agent2Row = this.agentRows[agentIndex2];
+        int agent2Col = this.agentCols[agentIndex2];    
 
+        int[] positions1 = calculatePositions(action1, agent1Row, agent1Col);
+        int[] positions2 = calculatePositions(action2, agent2Row, agent2Col);
+
+        // Check for conflicts
+        if ( action1.type == ActionType.NoOp || action2.type == ActionType.NoOp ) {
+            return false; // No conflict if either action is NoOp 
+        }
+        if(action1.type == ActionType.Move && action2.type == ActionType.Move && positions1[0] == positions2[0] && positions1[1] == positions2[1]){
+            return true; // Both agents attempt to occupy the same cell        
+        }        
+        if(action1.type == ActionType.Pull && action2.type == ActionType.Pull && positions1[2] == positions2[2] && positions1[3] == positions2[3]){
+            return true; // Both agents attempt to pull the same box        
+        }
+        if(action1.type == ActionType.Push && action2.type == ActionType.Push && positions1[0] == positions2[0] && positions1[1] == positions2[1]){
+            return true; // Both agents attempt to push the same box
+        }
+        if(action1.type == ActionType.Pull && action2.type == ActionType.Push && (positions1[2] == positions2[0] && positions1[3] == positions2[1])){
+            return true; // First agent tries to pull a box that the other tries to push
+        }
+        if(action1.type == ActionType.Push && action2.type == ActionType.Pull && (positions1[0] == positions2[2] && positions1[1] == positions2[3])){
+            return true; // First agent tries to push a box that the other tries to pull
+        }
+        if(action1.type == ActionType.Move && action2.type == ActionType.Push && (positions1[0] == positions2[2] && positions1[1] == positions2[3])){
+            return true; // An agent tries to move where a box is being pushed in
+        }            
+        return false;    }
+
+ 
+ 
     // Function to resolve conflicts with previously generated plans
-    public ArrayList<State> getExpandedStatesSequential(Action[][] previousPlans) {
+    public ArrayList<State> getExpandedStatesSequential(Action[][] previousPlans, int currentAgentIndex) {
         int numAgents = this.agentRows.length;
         ArrayList<State> expandedStates = new ArrayList<>(16);
 
@@ -265,8 +274,11 @@ public class State {
                 Action[] jointAction = new Action[numAgents];
                 Arrays.fill(jointAction, Action.NoOp); // Initialize all actions to NoOp
                 jointAction[agent] = action;
+                System.err.println("getExpandedStatesSequential: jointAction.length = " + jointAction.length);
+                System.err.println("createStaticStateForAgent: agentState.jointAction = "
+                        + Arrays.toString(agentState.jointAction));
                 // **Change:** Create a new State object and resolve conflicts
-                State childState = new State(agentState, jointAction);
+                State childState = new State(agentState, jointAction, currentAgentIndex);
                 childState.resolveConflicts(previousPlans); // Resolve conflicts with previous plans
                 expandedStates.add(childState);
             }
@@ -295,13 +307,12 @@ public class State {
 
         State agentState = new State(agentRowsCopy, agentColsCopy, agentColors, walls,
                 boxesCopy, boxColors, goals);
-
-        // Set all other agents to NoOp
-        for (int i = 0; i < agentState.agentRows.length; i++) {
-            if (i != agentIndex) {
-                agentState.jointAction[i] = Action.NoOp;
-            }
-        }
+        agentState.currentAgentIndex = agentIndex;
+        agentState.jointAction = new Action[agentState.agentRows.length];
+        System.err
+                .println("createStaticStateForAgent: agentState.jointAction.length = " + agentState.jointAction.length);
+        System.err.println(
+                "createStaticStateForAgent: agentState.jointAction = " + Arrays.toString(agentState.jointAction));
 
         return agentState;
     }
@@ -358,80 +369,7 @@ public class State {
         return false;
     }
 
-    private boolean isConflicting(Action[] jointAction) {
-        int numAgents = this.agentRows.length;
-
-        int[] destinationRows = new int[numAgents]; // row of new cell to become occupied by action
-        int[] destinationCols = new int[numAgents]; // column of new cell to become occupied by action
-        int[] boxRows = new int[numAgents]; // current row of box moved by action
-        int[] boxCols = new int[numAgents]; // current column of box moved by action
-
-        // Collect cells to be occupied and boxes to be moved
-        for (int agent = 0; agent < numAgents; ++agent) {
-            Action action = jointAction[agent];
-            int agentRow = this.agentRows[agent];
-            int agentCol = this.agentCols[agent];
-            int boxRow;
-            int boxCol;
-
-            switch (action.type) {
-                case NoOp:
-                    break;
-
-                case Move:
-                    destinationRows[agent] = agentRow + action.agentRowDelta;
-                    destinationCols[agent] = agentCol + action.agentColDelta;
-                    boxRows[agent] = agentRow; // Distinct dummy value
-                    boxCols[agent] = agentCol; // Distinct dummy value
-                    break;
-                case Push:
-                    destinationRows[agent] = agentRow + action.agentRowDelta;
-                    destinationCols[agent] = agentCol + action.agentColDelta;
-                    boxRow = destinationRows[agent] + action.boxRowDelta;
-                    boxCol = destinationCols[agent] + action.boxColDelta;
-                    boxRows[agent] = boxRow;
-                    boxCols[agent] = boxCol;
-                    break;
-                case Pull:
-                    destinationRows[agent] = agentRow + action.agentRowDelta;
-                    destinationCols[agent] = agentCol + action.agentColDelta;
-                    boxRow = agentRow - action.boxRowDelta;
-                    boxCol = agentCol - action.boxColDelta;
-                    boxRows[agent] = boxRow;
-                    boxCols[agent] = boxCol;
-                    break;
-            }
-        }
-
-        for (int a1 = 0; a1 < numAgents; ++a1) {
-            if (jointAction[a1] == Action.NoOp) {
-                continue;
-            }
-
-            for (int a2 = a1 + 1; a2 < numAgents; ++a2) {
-                if (jointAction[a2] == Action.NoOp) {
-                    continue;
-                }
-
-                // Moving into same cell?
-                if (destinationRows[a1] == destinationRows[a2] && destinationCols[a1] == destinationCols[a2]) {
-                    return true;
-                }
-
-                // Moving the same box?
-                if (boxRows[a1] == boxRows[a2] && boxCols[a1] == boxCols[a2]) {
-                    return true;
-                }
-
-                // Agent moving into cell where box is being pushed?
-                if (destinationRows[a1] == boxRows[a2] && destinationCols[a1] == boxCols[a2]) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
+   
 
     private boolean cellIsFree(int row, int col) {
         return !this.walls[row][col] && this.boxes[row][col] == 0 && this.agentAt(row, col) == 0;
@@ -446,30 +384,23 @@ public class State {
         return 0;
     }
 
-    public Action[][] extractPlan() {
-        Action[][] plan = new Action[this.g][];
-        State state = this;
-        while (state.jointAction != null) {
-            plan[state.g - 1] = state.jointAction;
-            state = state.parent;
-        }
-        return plan;
-    }
-
     public Action[] extractPlanForCurrentAgent() {
         Action[] plan = new Action[this.g];
         State state = this;
-        int currentAgentIndex =  this.agentRows.length - 1;
-            // Iterate only if there is a valid plan (state.jointAction is not null)
-            while (state.jointAction != null) {
-                plan[state.g - 1] = state.jointAction[currentAgentIndex]; // Extract action for current agent
-                state = state.parent;
-            }
-        
-    
+        // **Change:** Use the currentAgentIndex
+        int currentAgentIndex = this.currentAgentIndex;
+        System.err.println("extractPlanForCurrentAgent: state.jointAction.length = " + state.jointAction.length);
+        // Iterate only if there is a valid plan (state.jointAction is not null)
+        while (state.jointAction != null) {
+            System.err.println("Length of jointAction is : " + state.jointAction.length);
+            System.err.println("Current Agent Index is : " + currentAgentIndex);
+            System.err.println("joint action is : " + state.jointAction);
+            plan[state.g - 1] = state.jointAction[currentAgentIndex]; // Extract action for current agent
+            state = state.parent;
+        }
+
         return plan;
     }
-
 
     @Override
     public int hashCode() {
