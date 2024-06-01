@@ -12,7 +12,6 @@ import java.util.Queue;
 import java.util.Random;
 
 public class State {
-    private static final Random RNG = new Random(1);
     /*
      * The agent rows, columns, and colors are indexed by the agent number.
      * For example, this.agentRows[0] is the row location of agent '0'.
@@ -80,6 +79,7 @@ public class State {
         this.parent = parent;
         this.g = parent.g + 1;
         this.currentAgentIndex = currentAgentIndex;
+        this.leadingAction = currentAgentAction;
         // Apply the action for the current agent 
         char box;
         switch (currentAgentAction.type) {
@@ -126,6 +126,7 @@ public class State {
                 }
             }
         }
+        System.err.println("Goal state reached");
         return true;
     }
 
@@ -146,6 +147,7 @@ public class State {
                 }
             }
         }
+        System.err.println("Goal state reached for agent " + agentIndex);
         return true;
     }
     private Action resolveConflicts(Action[][] previousPlans, Action currentAgentAction) {
