@@ -48,14 +48,12 @@ public class State {
      * this.boxColor[1] is the color of B boxes, etc.
      */
     public final State parent;
-    public Action[] jointAction;
-    public final int g;
+    public int g;
     private int hash = 0;
     private int currentAgentIndex;
+    private Action leadingAction; //the action that lead to this state being generated
 
     // Constructs an initial state.
-    // Arguments are not copied, and therefore should not be modified after being
-    // passed in.
     public State(int[] agentRows, int[] agentCols, Color[] agentColors, boolean[][] walls,
             char[][] boxes, Color[] boxColors, char[][] goals) {
         this.agentRows = agentRows;
@@ -66,21 +64,11 @@ public class State {
         this.boxColors = boxColors;
         this.goals = goals;
         this.parent = null;
-        this.jointAction = new Action[agentRows.length];
         this.g = 0;
-        // **Change:** Initialize jointAction
-        this.jointAction = new Action[agentRows.length]; // Initialize with the number of agents
-        System.err.println("State Constructor: jointAction.length = " + this.jointAction.length);
-        for (int i = 0; i < agentRows.length; i++) {
-            this.jointAction[i] = Action.NoOp; // Set each element to NoOp
-        }
-        System.err.println("State Constructor: jointAction = " + Arrays.toString(this.jointAction));
     }
 
     // Constructs the state resulting from applying jointAction in parent.
-    // Precondition: Joint action must be applicable and non-conflicting in parent
-    // state.
-    private State(State parent, Action[] jointAction, int currentAgentIndex) {
+    private State(State parent, Action currentAgentAction, int currentAgentIndex) {
         // Copy parent
         this.agentRows = Arrays.copyOf(parent.agentRows, parent.agentRows.length);
         this.agentCols = Arrays.copyOf(parent.agentCols, parent.agentCols.length);
@@ -90,43 +78,37 @@ public class State {
         }
         // Set own parameters
         this.parent = parent;
-        this.jointAction = Arrays.copyOf(jointAction, jointAction.length);
         this.g = parent.g + 1;
         this.currentAgentIndex = currentAgentIndex;
-        // Apply each action
-        int numAgents = this.agentRows.length;
-        for (int agent = 0; agent < numAgents; ++agent) {
-            Action action = jointAction[agent];
-            char box;
-            switch (action.type) {
-                case NoOp:
-                    break;
-                case Move:
-                    this.agentRows[agent] += action.agentRowDelta;
-                    this.agentCols[agent] += action.agentColDelta;
-                    break;
-                case Push:
-                    this.agentRows[agent] += action.agentRowDelta;
-                    this.agentCols[agent] += action.agentColDelta;
-                    box = this.boxes[this.agentRows[agent]][this.agentCols[agent]];
-                    this.boxes[this.agentRows[agent] + action.boxRowDelta][this.agentCols[agent]
-                            + action.boxColDelta] = box;
-                    this.boxes[this.agentRows[agent]][this.agentCols[agent]] = 0;
-                    break;
-                case Pull:
-                    box = this.boxes[this.agentRows[agent] -
-                            action.boxRowDelta][this.agentCols[agent]
-                                    - action.boxColDelta];
-                    this.boxes[this.agentRows[agent]][this.agentCols[agent]] = box;
-                    this.boxes[this.agentRows[agent] - action.boxRowDelta][this.agentCols[agent]
-                            - action.boxColDelta] = 0;
-                    this.agentRows[agent] += action.agentRowDelta;
-                    this.agentCols[agent] += action.agentColDelta;
-                    break;
-            }
+        // Apply the action for the current agent 
+        char box;
+        switch (currentAgentAction.type) {
+            case NoOp:
+                break;
+            case Move:
+                this.agentRows[currentAgentIndex] += currentAgentAction.agentRowDelta;
+                this.agentCols[currentAgentIndex] += currentAgentAction.agentColDelta;
+                break;
+            case Push:
+                this.agentRows[currentAgentIndex] += currentAgentAction.agentRowDelta;
+                this.agentCols[currentAgentIndex] += currentAgentAction.agentColDelta;
+                box = this.boxes[this.agentRows[currentAgentIndex]][this.agentCols[currentAgentIndex]];
+                this.boxes[this.agentRows[currentAgentIndex] + currentAgentAction.boxRowDelta][this.agentCols[currentAgentIndex]
+                        + currentAgentAction.boxColDelta] = box;
+                this.boxes[this.agentRows[currentAgentIndex]][this.agentCols[currentAgentIndex]] = 0;
+                break;
+            case Pull:
+                box = this.boxes[this.agentRows[currentAgentIndex] -
+                        currentAgentAction.boxRowDelta][this.agentCols[currentAgentIndex]
+                                - currentAgentAction.boxColDelta];
+                this.boxes[this.agentRows[currentAgentIndex]][this.agentCols[currentAgentIndex]] = box;
+                this.boxes[this.agentRows[currentAgentIndex] - currentAgentAction.boxRowDelta][this.agentCols[currentAgentIndex]
+                        - currentAgentAction.boxColDelta] = 0;
+                this.agentRows[currentAgentIndex] += currentAgentAction.agentRowDelta;
+                this.agentCols[currentAgentIndex] += currentAgentAction.agentColDelta;
+                break;
         }
     }
-
     public int g() {
         return this.g;
     }
@@ -147,8 +129,7 @@ public class State {
         return true;
     }
 
-    public boolean isGoalStateForAgent(int agentIndex) {
-        // Check if the agent has reached its goal position
+    public boolean isGoalStateForAgent(int agentIndex) {// Check if the agent has reached its goal position        
         if (!(this.agentRows[agentIndex] == this.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]] - '0' &&
                 this.agentCols[agentIndex] == this.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]]
                         - '0')) {
@@ -167,31 +148,23 @@ public class State {
         }
         return true;
     }
-
-    // Function to resolve conflicts with previously generated plans
-    private void resolveConflicts(Action[][] previousPlans) {
-        // Assuming the agent plans are for agents 0, 1, 2, ...
-        int numAgents = this.agentRows.length;
-        for (int agent = 1; agent < numAgents; ++agent) {
-            for (int i = 0; i < previousPlans[agent - 1].length; ++i) {
-                if (previousPlans[agent - 1][i] == Action.NoOp) {
-                    continue;
-                }
-
-                // Check for conflicts with the plan for agent (agent-1)
-                for (int j = 0; j < this.jointAction.length; ++j) {
-                    if (this.jointAction[j] == Action.NoOp) {
-                        continue;
-                    }
-
-                    if (conflicts(this.jointAction[j], previousPlans[agent - 1][i], j, agent - 1)) {
-                        // Concede to the previous agent's plan
-                        this.jointAction[j] = Action.NoOp;
-                        break; // Move to the next action in the previous plan
-                    }
-                }
+    private Action resolveConflicts(Action[][] previousPlans, Action currentAgentAction) {
+        for (int i = previousPlans.length - 1; i >= 0; i--) {
+            // Get the action at the same rank in the previous plan
+            Action previousAction = previousPlans[i][this.g];
+            // Check if the previous action is null
+            if (previousAction == null) {
+                // If it's null, skip this iteration and go to the next one
+                continue;
+            }
+            // Check if there is a conflict between the current action and the previous action
+            if (conflicts(currentAgentAction, previousAction, this.currentAgentIndex, i)) {
+                // If there is a conflict, concede to the previous agent's plan by making this action a NoOp
+                return Action.NoOp;
             }
         }
+        // If no conflict was found with any of the previous plans, the action is valid
+        return currentAgentAction;
     }
     int[] calculatePositions(Action action, int agentRow, int agentCol) {
         int agentDestinationRow = -1, agentDestinationCol = -1, boxRow = -1, boxCol = -1;       
@@ -223,8 +196,8 @@ public class State {
         }    
         return new int[]{agentDestinationRow, agentDestinationCol, boxRow, boxCol};
     }
-    // Helper function to check if two actions conflict
-    private boolean conflicts(Action action1, Action action2, int agentIndex1, int agentIndex2) {
+    
+    private boolean conflicts(Action action1, Action action2, int agentIndex1, int agentIndex2) { // Helper function to check if two actions conflict
         int agent1Row = this.agentRows[agentIndex1];
         int agent1Col = this.agentCols[agentIndex1];
         int agent2Row = this.agentRows[agentIndex2];
@@ -256,66 +229,25 @@ public class State {
             return true; // An agent tries to move where a box is being pushed in
         }            
         return false;    }
-
  
- 
-    // Function to resolve conflicts with previously generated plans
-    public ArrayList<State> getExpandedStatesSequential(Action[][] previousPlans, int currentAgentIndex) {
-        int numAgents = this.agentRows.length;
-        ArrayList<State> expandedStates = new ArrayList<>(16);
-
-        for (int agent = 0; agent < numAgents; ++agent) {
-            // Create a new state where all other agents are static
-            State agentState = this.createStaticStateForAgent(agent);
-            // Generate actions for the current agent
-            Action[] agentActions = agentState.generateAgentActions();
-            // Generate child states for the current agent
-            for (Action action : agentActions) {
-                Action[] jointAction = new Action[numAgents];
-                Arrays.fill(jointAction, Action.NoOp); // Initialize all actions to NoOp
-                jointAction[agent] = action;
-                System.err.println("getExpandedStatesSequential: jointAction.length = " + jointAction.length);
-                System.err.println("createStaticStateForAgent: agentState.jointAction = "
-                        + Arrays.toString(agentState.jointAction));
-                // **Change:** Create a new State object and resolve conflicts
-                State childState = new State(agentState, jointAction, currentAgentIndex);
-                childState.resolveConflicts(previousPlans); // Resolve conflicts with previous plans
-                expandedStates.add(childState);
-            }
+        public ArrayList<State> getExpandedStatesSequential(Action[][] previousPlans, int currentAgentIndex, boolean isAtLeast1GoalFound) {
+            int numAgents = this.agentRows.length;
+            ArrayList<State> expandedStates = new ArrayList<>(16);
+            Action currentAgentAction = Action.NoOp;
+            
+            // Generate child states for the current agent ONLY
+            for (Action action : Action.values()) {
+                if (this.isApplicable(currentAgentIndex, action)) {
+                    currentAgentAction = action;
+                    if(isAtLeast1GoalFound){
+                        currentAgentAction = resolveConflicts(previousPlans,currentAgentAction);
+                    }
+                    State childState = new State(this, currentAgentAction, currentAgentIndex);
+                    expandedStates.add(childState);
+                }
+            }    
+            return expandedStates;
         }
-
-        return expandedStates;
-    }
-
-    private Action[] generateAgentActions() {
-        ArrayList<Action> agentActions = new ArrayList<>(Action.values().length);
-        for (Action action : Action.values()) {
-            if (this.isApplicable(0, action)) {
-                agentActions.add(action);
-            }
-        }
-        return agentActions.toArray(new Action[0]);
-    }
-
-    private State createStaticStateForAgent(int agentIndex) {
-        int[] agentRowsCopy = Arrays.copyOf(this.agentRows, this.agentRows.length);
-        int[] agentColsCopy = Arrays.copyOf(this.agentCols, this.agentCols.length);
-        char[][] boxesCopy = new char[this.boxes.length][];
-        for (int i = 0; i < this.boxes.length; i++) {
-            boxesCopy[i] = Arrays.copyOf(this.boxes[i], this.boxes[i].length);
-        }
-
-        State agentState = new State(agentRowsCopy, agentColsCopy, agentColors, walls,
-                boxesCopy, boxColors, goals);
-        agentState.currentAgentIndex = agentIndex;
-        agentState.jointAction = new Action[agentState.agentRows.length];
-        System.err
-                .println("createStaticStateForAgent: agentState.jointAction.length = " + agentState.jointAction.length);
-        System.err.println(
-                "createStaticStateForAgent: agentState.jointAction = " + Arrays.toString(agentState.jointAction));
-
-        return agentState;
-    }
 
     private boolean isApplicable(int agent, Action action) {
         int agentRow = this.agentRows[agent];
@@ -384,88 +316,21 @@ public class State {
         return 0;
     }
 
-    public Action[] extractPlanForCurrentAgent() {
-        Action[] plan = new Action[this.g];
-        State state = this;
-        // **Change:** Use the currentAgentIndex
-        int currentAgentIndex = this.currentAgentIndex;
-        System.err.println("extractPlanForCurrentAgent: state.jointAction.length = " + state.jointAction.length);
-        // Iterate only if there is a valid plan (state.jointAction is not null)
-        while (state.jointAction != null) {
-            System.err.println("Length of jointAction is : " + state.jointAction.length);
-            System.err.println("Current Agent Index is : " + currentAgentIndex);
-            System.err.println("joint action is : " + state.jointAction);
-            plan[state.g - 1] = state.jointAction[currentAgentIndex]; // Extract action for current agent
-            state = state.parent;
-        }
+  public Action[] extractPlanForCurrentAgent() {
+    Action[] plan = new Action[this.g];
+    State state = this; // Start from the current state (which is the goal state)
+    int step = this.g - 1; // Start from the last step (g - 1)
 
-        return plan;
+    // Climb down the tree of states, appending leading actions
+    while (state.parent != null) {
+        plan[step] = state.leadingAction; // Append the leading action
+        state = state.parent; // Move to the parent state
+        step--; // Decrement the step counter
     }
 
-    @Override
-    public int hashCode() {
-        if (this.hash == 0) {
-            final int prime = 31;
-            int result = 1;
-            result = prime * result + Arrays.hashCode(this.agentColors);
-            result = prime * result + Arrays.hashCode(this.boxColors);
-            result = prime * result + Arrays.deepHashCode(this.walls);
-            result = prime * result + Arrays.deepHashCode(this.goals);
-            result = prime * result + Arrays.hashCode(this.agentRows);
-            result = prime * result + Arrays.hashCode(this.agentCols);
-            for (int row = 0; row < this.boxes.length; ++row) {
-                for (int col = 0; col < this.boxes[row].length; ++col) {
-                    char c = this.boxes[row][col];
-                    if (c != 0) {
-                        result = prime * result + (row * this.boxes[row].length + col) * c;
-                    }
-                }
-            }
-            this.hash = result;
-        }
-        return this.hash;
-    }
+    return plan;
+}
 
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if (obj == null) {
-            return false;
-        }
-        if (this.getClass() != obj.getClass()) {
-            return false;
-        }
-        State other = (State) obj;
-        return Arrays.equals(this.agentRows, other.agentRows) &&
-                Arrays.equals(this.agentCols, other.agentCols) &&
-                Arrays.equals(this.agentColors, other.agentColors) &&
-                Arrays.deepEquals(this.walls, other.walls) &&
-                Arrays.deepEquals(this.boxes, other.boxes) &&
-                Arrays.equals(this.boxColors, other.boxColors) &&
-                Arrays.deepEquals(this.goals, other.goals);
-    }
-
-    @Override
-    public String toString() {
-        StringBuilder s = new StringBuilder();
-        for (int row = 0; row < this.walls.length; row++) {
-            for (int col = 0; col < this.walls[row].length; col++) {
-                if (this.boxes[row][col] > 0) {
-                    s.append(this.boxes[row][col]);
-                } else if (this.walls[row][col]) {
-                    s.append("+");
-                } else if (this.agentAt(row, col) != 0) {
-                    s.append(this.agentAt(row, col));
-                } else {
-                    s.append(" ");
-                }
-            }
-            s.append("\n");
-        }
-        return s.toString();
-    }
 
     private int[][][][] distances;
 

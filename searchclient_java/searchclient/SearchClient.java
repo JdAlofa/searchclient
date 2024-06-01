@@ -41,7 +41,6 @@ public class SearchClient {
             }
             line = serverMessages.readLine();
         }
-
         // Read initial state
         // line is currently "#initial"
         int numRows = 0;
@@ -91,25 +90,19 @@ public class SearchClient {
                     goals[row][col] = c;
                 }
             }
-
             ++row;
             line = serverMessages.readLine();
         }
-
-        // End
-        // line is currently "#end"
-
         return new State(agentRows, agentCols, agentColors, walls, boxes, boxColors, goals);
     }
 
     public static void main(String[] args)
             throws IOException {
-               // Send client name to server.
+        // Send client name to server.
         System.out.println("SearchClient");
         // Parse the level.
         BufferedReader serverMessages = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.US_ASCII));
         State initialState = SearchClient.parseLevel(serverMessages);
-
         // Select search strategy.
         Frontier frontier;
         if (args.length > 0) {
@@ -138,7 +131,7 @@ public class SearchClient {
                     frontier = new FrontierBestFirst(new HeuristicGreedy(initialState));
                     break;
                 default:
-                frontier = new FrontierBestFirst(new HeuristicAStar(initialState));
+                    frontier = new FrontierBestFirst(new HeuristicAStar(initialState));
                     System.err.println("Defaulting to Astar search. Use arguments -bfs, -dfs, -astar, -wastar, or " +
                             "-greedy to set the search strategy.");
             }
@@ -149,9 +142,7 @@ public class SearchClient {
         // Search for a plan.
         Action[][] plan;
         try {
-            Action[][] previousPlans = new Action[initialState.agentRows.length][];
-            Arrays.fill(previousPlans, null); // Initialize with null
-            plan = SearchClient.search(initialState, frontier, previousPlans,0);            
+            plan = SearchClient.search(initialState, frontier, 0);
         } catch (OutOfMemoryError ex) {
             System.err.println("Maximum memory usage exceeded.");
             plan = null;
@@ -178,11 +169,13 @@ public class SearchClient {
         }
     }
 
-    public static Action[][] search(State initialState, Frontier frontier, Action[][] previousPlans,int agentIndex) {
+    public static Action[][] search(State initialState, Frontier frontier, int agentIndex) {
         // System.err.format("Starting %s.\n", frontier.getName());
         int iterations = 0;
         frontier.add(initialState);
         HashSet<State> expanded = new HashSet<>();
+        Action[][] previousPlans = new Action[initialState.agentRows.length][];
+        boolean isAtLeast1GoalFound = false;
 
         while (true) {
             // Print a status message every 10000 iteration
@@ -200,37 +193,44 @@ public class SearchClient {
             if (state.isGoalState()) {
                 printSearchStatus(expanded, frontier);
 
-                Action[][] combinedPlan = new Action[state.agentRows.length][state.g];
-                for (int i = 0; i < state.agentRows.length; i++) {
-                    for (int j = 0; j < state.g; j++) {
-                        if (previousPlans[i] != null && j < previousPlans[i].length) {
-                            combinedPlan[i][j] = previousPlans[i][j]; // Fill the plan from previousPlans
-                        } else {
-                            combinedPlan[i][j] = Action.NoOp; // Fill with NoOp if no plan for previous agents
+                Action[][] combinedPlan = new Action[state.g][state.agentRows.length];
+                for (int i = 0; i < state.g; i++) {
+                    for (int j = 0; j < state.agentRows.length; j++) {
+                        if (previousPlans[j] != null && i < previousPlans[j].length) {
+                            combinedPlan[i][j] = previousPlans[j][i];
                         }
                     }
+
                 }
-                System.err.println("search: combinedPlan : " + combinedPlan);
-                
+                for (int i = 0; i < combinedPlan.length; i++) {
+                    for (int j = 0; j < combinedPlan[i].length; j++) {
+                        System.err.println("Step " + i + " Action for agent " + j + " : " + combinedPlan[i][j]);
+                    }
+                }
                 return combinedPlan; // Return the combined plan
             }
 
-             // Check if goal state for the current agent
-        if (state.isGoalStateForAgent(agentIndex)) { // Check for individual goal state
-            printSearchStatus(expanded, frontier);
-
-            // Fill previousPlans with the plan for the current agent
-            previousPlans[agentIndex] = state.extractPlanForCurrentAgent(); // Extract plan after reaching goal
-
-        }
+            // Check if goal state for the current agent
+            if (state.isGoalStateForAgent(agentIndex)) { // Check for individual goal state
+                isAtLeast1GoalFound = true;
+                printSearchStatus(expanded, frontier);
+                System.err.println("Agent " + agentIndex + " reached goal state");
+                // Fill previousPlans with the plan for the current agent
+                previousPlans[agentIndex] = state.extractPlanForCurrentAgent(); // Extract plan after reaching goal
+                agentIndex = (agentIndex + 1) % initialState.agentRows.length; // Increment agent index
+                frontier = new FrontierBestFirst(new HeuristicAStar(initialState));
+                expanded.clear();
+                state = initialState;
+                state.g = 0;
+                frontier.add(state);
+                continue;
+            }
             // Expand the state for the current agent
-            for (State child : state.getExpandedStatesSequential(previousPlans,agentIndex)) {
+            for (State child : state.getExpandedStatesSequential(previousPlans, agentIndex, isAtLeast1GoalFound)) {
                 if (!frontier.contains(child) && !expanded.contains(child)) {
                     frontier.add(child);
                 }
             }
-
-            agentIndex = (agentIndex + 1) % initialState.agentRows.length; // Increment agent index
         }
     }
 
