@@ -1,7 +1,4 @@
 package searchclient;
-
-// import searchclient.Action;
-// import searchclient.ActionType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -51,6 +48,8 @@ public class State {
     private int hash = 0;
     private int currentAgentIndex;
     private Action leadingAction; //the action that lead to this state being generated
+    private int[][][][] distances; // Distances between all cells in the grid
+
 
     // Constructs an initial state.
     public State(int[] agentRows, int[] agentCols, Color[] agentColors, boolean[][] walls,
@@ -109,10 +108,7 @@ public class State {
                 break;
         }
     }
-    public int g() {
-        return this.g;
-    }
-
+    
     public boolean isGoalState() {
         for (int row = 1; row < this.goals.length - 1; row++) {
             for (int col = 1; col < this.goals[row].length - 1; col++) {
@@ -130,13 +126,15 @@ public class State {
         return true;
     }
 
-    public boolean isGoalStateForAgent(int agentIndex) {// Check if the agent has reached its goal position        
-        if (!(this.agentRows[agentIndex] == this.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]] - '0' &&
-                this.agentCols[agentIndex] == this.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]]
-                        - '0')) {
-            return false;
-        }
-        // Check if the agent has moved all its boxes to their goal locations
+    public boolean isGoalStateForAgent(int agentIndex) {      
+    // Check if the agent is at the goal cell
+    char agentChar = (char) ('0' + agentIndex);
+
+    // Check if the agent has reached its goal position
+    if (this.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]] != agentChar) {
+        return false;
+    } 
+    // Check if the agent boxes are goal placed 
         for (int row = 1; row < this.goals.length - 1; row++) {
             for (int col = 1; col < this.goals[row].length - 1; col++) {
                 char goal = this.goals[row][col];
@@ -321,7 +319,7 @@ public class State {
   public Action[] extractPlanForCurrentAgent() {
     Action[] plan = new Action[this.g];
     State state = this; // Start from the current state (which is the goal state)
-    int step = this.g - 1; // Start from the last step (g - 1)
+    int step = this.g -1; // The step counter is equal to the cost of the plan
 
     // Climb down the tree of states, appending leading actions
     while (state.parent != null) {
@@ -329,12 +327,10 @@ public class State {
         state = state.parent; // Move to the parent state
         step--; // Decrement the step counter
     }
-
     return plan;
 }
 
 
-    private int[][][][] distances;
 
     public int[][][][] getDistances() {
         if (this.distances == null) {

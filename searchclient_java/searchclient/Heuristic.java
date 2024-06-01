@@ -53,7 +53,7 @@ class HeuristicAStar
 
     @Override
     public int f(State s) {
-        return s.g() + this.H(s);
+        return s.g + this.H(s);
     }
 
     @Override
@@ -73,7 +73,7 @@ class HeuristicWeightedAStar
 
     @Override
     public int f(State s) {
-        return s.g() + this.w * this.H(s);
+        return s.g + this.w * this.H(s);
     }
 
     @Override

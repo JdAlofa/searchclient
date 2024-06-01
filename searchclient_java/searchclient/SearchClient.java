@@ -168,8 +168,7 @@ public class SearchClient {
                     System.out.print(jointAction[action].name);
                 }
                 System.out.println();
-                // We must read the server's response to not fill up the stdin buffer and block
-                // the server.
+                // We must read the server's response to not fill up the stdin buffer and block the server.
                 serverMessages.readLine();
             }
         }
@@ -199,18 +198,33 @@ public class SearchClient {
             if (state.isGoalStateForAgent(agentIndex)) { // Check for individual goal state
                 isAtLeast1GoalFound = true;
                 printSearchStatus(expanded, frontier);
-                System.err.println("Agent " + agentIndex + " reached goal state");
                 // Fill previousPlans with the plan for the current agent
                 previousPlans[agentIndex] = state.extractPlanForCurrentAgent(); // Extract plan after reaching goal
                 System.err.println("Plan for agent " + agentIndex + " : " + Arrays.toString(previousPlans[agentIndex]));
-                agentIndex = (agentIndex + 1) % initialState.agentRows.length; // Increment agent index
-                frontier = new FrontierBestFirst(new HeuristicAStar(initialState));
-                expanded.clear();
-                state = initialState;
-                state.g = 0;
-                frontier.add(state);
-                continue;
-            }
+
+                if (initialState.agentRows.length == 1) {
+                    Action[][] combinedPlan = new Action[state.g][state.agentRows.length];
+                    for (int i = 0; i < state.g; i++) {
+                        for (int j = 0; j < state.agentRows.length; j++) {
+                            if (previousPlans[j] != null && i < previousPlans[j].length) {
+                                combinedPlan[i][j] = previousPlans[j][i];
+                            } else {
+                                combinedPlan[i][j] = Action.NoOp;
+                            }
+                            
+                        }
+                    }
+                    return combinedPlan; // Return the combined plan
+                } else {           
+                    agentIndex = (agentIndex + 1) % initialState.agentRows.length; // Increment agent index
+                    frontier = new FrontierBestFirst(new HeuristicAStar(initialState));
+                    expanded.clear();
+                    state = initialState;
+                    state.g = 0;
+                    frontier.add(state);
+                    continue;
+                    }
+            }   
             
             // Check if goal state for the grid
             if (state.isGoalState()) {
