@@ -1,12 +1,8 @@
 package searchclient;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Queue;
-import java.util.Random;
 
 public class State {
     /*
@@ -122,7 +118,6 @@ public class State {
                 }
             }
         }
-        System.err.println("Goal state reached");
         return true;
     }
 
@@ -131,7 +126,7 @@ public class State {
     char agentChar = (char) ('0' + agentIndex);
 
     // Check if the agent has reached its goal position
-    if (this.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]] != agentChar) {
+    if (State.goals[this.agentRows[agentIndex]][this.agentCols[agentIndex]] != agentChar) {
         return false;
     } 
     // Check if the agent boxes are goal placed 
@@ -250,9 +245,10 @@ public class State {
         }
 
     private boolean isApplicable(int agent, Action action) {
-        int agentRow = this.agentRows[agent];
+        int agentRow
+         = this.agentRows[agent];
         int agentCol = this.agentCols[agent];
-        Color agentColor = this.agentColors[agent];
+        Color agentColor = State.agentColors[agent];
         int boxRow;
         int boxCol;
         Color boxColor;
@@ -274,7 +270,7 @@ public class State {
                 if (box == 0) {
                     return false;
                 }
-                boxColor = this.boxColors[box - 'A'];
+                boxColor = State.boxColors[box - 'A'];
                 if (agentColor != boxColor) {
                     return false;
                 }
@@ -290,7 +286,7 @@ public class State {
                 if (box == 0) {
                     return false;
                 }
-                boxColor = this.boxColors[box - 'A'];
+                boxColor = State.boxColors[box - 'A'];
                 if (agentColor != boxColor) {
                     return false;
                 }
@@ -304,7 +300,7 @@ public class State {
    
 
     private boolean cellIsFree(int row, int col) {
-        return !this.walls[row][col] && this.boxes[row][col] == 0 && this.agentAt(row, col) == 0;
+        return !State.walls[row][col] && this.boxes[row][col] == 0 && this.agentAt(row, col) == 0;
     }
 
     private char agentAt(int row, int col) {

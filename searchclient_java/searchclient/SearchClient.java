@@ -195,7 +195,7 @@ public class SearchClient {
             expanded.add(state);
 
             // Check if goal state for the current agent
-            if (state.isGoalStateForAgent(agentIndex)) { // Check for individual goal state
+            if (state.isGoalStateForAgent(agentIndex) || state.isGoalState() ) { // Check for individual goal state
                 isAtLeast1GoalFound = true;
                 printSearchStatus(expanded, frontier);
                 // Fill previousPlans with the plan for the current agent
@@ -215,6 +215,7 @@ public class SearchClient {
                         }
                     }
                     return combinedPlan; // Return the combined plan
+                
                 } else {           
                     agentIndex = (agentIndex + 1) % initialState.agentRows.length; // Increment agent index
                     frontier = new FrontierBestFirst(new HeuristicAStar(initialState));
@@ -241,6 +242,8 @@ public class SearchClient {
                         
                     }
                 }
+                System.err.println("Goal state reached");
+
                 return combinedPlan; // Return the combined plan
             }
 
