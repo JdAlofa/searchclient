@@ -143,12 +143,6 @@ public class SearchClient {
         Action[][] plan;
         try {
             plan = SearchClient.search(initialState, frontier, 0);
-            for (Action[] jointAction : plan) {
-                for (Action action : jointAction) {
-                    System.err.print(action+ " ");
-                }
-                System.err.println();
-            }
         } catch (OutOfMemoryError ex) {
             System.err.println("Maximum memory usage exceeded.");
             plan = null;
@@ -168,7 +162,8 @@ public class SearchClient {
                     System.out.print(jointAction[action].name);
                 }
                 System.out.println();
-                // We must read the server's response to not fill up the stdin buffer and block the server.
+                // We must read the server's response to not fill up the stdin buffer and block
+                // the server.
                 serverMessages.readLine();
             }
         }
@@ -180,26 +175,74 @@ public class SearchClient {
         frontier.add(initialState);
         HashSet<State> expanded = new HashSet<>();
         Action[][] previousPlans = new Action[initialState.agentRows.length][];
-        boolean isAtLeast1GoalFound = false;
+        State resetState = initialState;
 
         while (true) {
+            State state = frontier.pop();
+            expanded.add(state);
+
             // Print a status message every 10000 iteration
             if (++iterations % 10000 == 0) {
                 printSearchStatus(expanded, frontier);
             }
-            if (frontier.isEmpty()) {
-                return null;
+            
+            if (agentIndex == initialState.agentRows.length) {
+                System.err.println("All individual plans found.");
+                for (int i = 0; i < previousPlans.length; i++) {
+                    System.err.print("Plan " + i + " : " + Arrays.toString(previousPlans[i]));
+                    System.err.println();
+                }
+                // Find the length of the longest plan
+                int maxPlanLength = 0;
+                for (Action[] plan : previousPlans) {
+                    if (plan != null && plan.length > maxPlanLength) {
+                        maxPlanLength = plan.length;
+                    }
+                }
+                Action[][] combinedPlan = new Action[maxPlanLength][state.agentRows.length];
+                for (int i = 0; i < maxPlanLength; i++) {
+                    for (int j = 0; j < state.agentRows.length; j++) {
+                        if (previousPlans[j] != null && i < previousPlans[j].length
+                                && previousPlans[j][i] != null) {
+                            combinedPlan[i][j] = previousPlans[j][i];
+                        } else {
+                            combinedPlan[i][j] = Action.NoOp;
+                        }
+                    }
+                }
+
+                System.err.println("Combined plans: ");
+                for (Action[] actions : combinedPlan) {
+                    for (Action action : actions) {
+                        System.err.print(action + " ");
+                    }
+                    System.err.println();
+                }
+                return combinedPlan; // Return the combined plan
             }
-
-            State state = frontier.pop();
-            expanded.add(state);
-
             // Check if goal state for the current agent
-            if (state.isGoalStateForAgent(agentIndex) || state.isGoalState() ) { // Check for individual goal state
-                isAtLeast1GoalFound = true;
+            if (state.isGoalStateForAgent(agentIndex)) { // Check for individual goal state
+                System.err.println("Goal state reached for agent " + agentIndex);
                 printSearchStatus(expanded, frontier);
                 // Fill previousPlans with the plan for the current agent
                 previousPlans[agentIndex] = state.extractPlanForCurrentAgent(); // Extract plan after reaching goal
+
+                // Resolve conflicts
+                ArrayList<Action> conflictedPlan = new ArrayList<>(Arrays.asList(previousPlans[agentIndex]));
+                if (initialState.agentRows.length > 1 && previousPlans[0] != null) {
+
+                    for (int i = 0; i < conflictedPlan.size(); i++) {
+                        Action conflictedAction = state.resolveConflicts(previousPlans, conflictedPlan.get(i));
+                        if (conflictedAction.equals(conflictedPlan.get(i))) {
+                            continue;
+                        } else {
+                            conflictedPlan.add(i, conflictedAction);
+                        }
+                    }
+
+                    previousPlans[agentIndex] = conflictedPlan.toArray(new Action[conflictedPlan.size()]);
+                }
+
                 System.err.println("Plan for agent " + agentIndex + " : " + Arrays.toString(previousPlans[agentIndex]));
 
                 if (initialState.agentRows.length == 1) {
@@ -211,45 +254,37 @@ public class SearchClient {
                             } else {
                                 combinedPlan[i][j] = Action.NoOp;
                             }
-                            
+
                         }
                     }
                     return combinedPlan; // Return the combined plan
-                
-                } else {           
-                    agentIndex = (agentIndex + 1) % initialState.agentRows.length; // Increment agent index
-                    frontier = new FrontierBestFirst(new HeuristicAStar(initialState));
-                    expanded.clear();
-                    state = initialState;
-                    state.g = 0;
-                    frontier.add(state);
-                    continue;
-                    }
-            }   
-            
-            // Check if goal state for the grid
-            if (state.isGoalState()) {
-                printSearchStatus(expanded, frontier);
 
-                Action[][] combinedPlan = new Action[state.g][state.agentRows.length];
-                for (int i = 0; i < state.g; i++) {
-                    for (int j = 0; j < state.agentRows.length; j++) {
-                        if (previousPlans[j] != null && i < previousPlans[j].length) {
-                            combinedPlan[i][j] = previousPlans[j][i];
-                        } else {
-                            combinedPlan[i][j] = Action.NoOp;
+                } else {
+                    if (agentIndex < initialState.agentRows.length) {
+                        // Deep copy the initial state for the next agent
+                        resetState = new State(initialState.agentRows.clone(), initialState.agentCols.clone(),
+                                initialState.agentColors, initialState.walls,
+                                initialState.boxes, initialState.boxColors, initialState.goals);
+                        for (int i = 0; i < previousPlans[agentIndex].length; i++) {
+                            resetState = new State(resetState, previousPlans[agentIndex][i], agentIndex);
                         }
-                        
+                        resetState.g = 0;
+                        resetState.currentAgentIndex = agentIndex + 1;
+                        resetState.parent = null;
+                        frontier = new FrontierBestFirst(new HeuristicAStar(resetState));
+                        expanded.clear();
+                        frontier.add(resetState);
+                        agentIndex++; // Increment agent index
+                        continue;
+                    } else {
+                        // all agent have reached their goals
+                        continue;
                     }
                 }
-                System.err.println("Goal state reached");
-
-                return combinedPlan; // Return the combined plan
             }
 
-            
             // Expand the state for the current agent
-            for (State child : state.getExpandedStatesSequential(previousPlans, agentIndex, isAtLeast1GoalFound)) {
+            for (State child : state.getExpandedStatesSequential(previousPlans, agentIndex)) {
                 if (!frontier.contains(child) && !expanded.contains(child)) {
                     frontier.add(child);
                 }
